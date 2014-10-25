@@ -1,4 +1,4 @@
-module DifferenceLogic.TestUtils(testFunction) where
+module EqualitySolver.TestUtils(testFunction) where
 
 import Test.HUnit
 
