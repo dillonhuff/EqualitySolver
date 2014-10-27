@@ -3,7 +3,11 @@ module EqualitySolver.Solver(
   var,
   satisfiableInEq) where
 
+import Control.Monad.Identity
+import Control.Monad.State
+import Control.Monad.Trans.UnionFind as U
 import Data.List as L
+import Data.Map as M
 import Data.Set as S
 
 -- A conjunction of literals
@@ -28,11 +32,29 @@ type Arity = Int
 type Name = String
 
 data EqTerm
-  = Function Arity
+  = Function Arity [EqTerm]
   | Variable Name
     deriving (Eq, Ord, Show)
 
 var = Variable
 
 satisfiableInEq :: EqFormula -> Bool
-satisfiableInEq formula = True
+satisfiableInEq formula = fst $ runDecideEq $ decideEq formula
+
+type DecideEq a = UnionFindT EqTerm (StateT EqState Identity) a
+
+runDecideEq :: DecideEq a -> (a, EqState)
+runDecideEq decide = runIdentity $ runStateT (runUnionFind decide) newEqState
+
+decideEq :: EqFormula -> DecideEq Bool
+decideEq f = do
+  return False
+
+data EqState
+  = EqState {
+    diseqs :: Set (EqTerm, EqTerm),
+    pointMap :: Map EqTerm (Point EqTerm)
+    }
+
+newEqState = EqState S.empty M.empty
+
