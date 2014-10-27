@@ -86,20 +86,17 @@ mergeClasses l r = do
   repL <- getPoint l
   repR <- getPoint r
   U.union repL repR
-  eqSt <- lift $ get
-  classConflict (diseqs eqSt)
+  deqs <- lift $ gets diseqs
+  classConflict $ S.toList deqs
 
-classConflict :: Set (EqTerm, EqTerm) -> DecideEq Bool
-classConflict disequalities = do
-  case S.size disequalities of
-    0 -> return True
+classConflict :: [(EqTerm, EqTerm)] -> DecideEq Bool
+classConflict [] = return True
+{-classConflict (nextDis:rest) = do
+  s <- sameClass (fst nextDis) (snd nextDis)
+  case s of
+    True -> return False
     _ -> do
-      let nextDis = S.findMin disequalities
-      s <- sameClass (fst nextDis) (snd nextDis)
-      case s of
-        True -> return False
-        _ -> do
-          classConflict $ S.delete nextDis disequalities
+      classConflict rest-}
 
 addEq :: EqTerm -> EqTerm -> DecideEq Bool
 addEq l r = do

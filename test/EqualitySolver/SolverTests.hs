@@ -12,4 +12,7 @@ satCases =
    (eqF $ [neq (var "a") (var "b")], True),
    (eqF $ [neq (var "a") (var "b"), eq (var "a") (var "b")], False),
    (eqF $ [eq (var "a") (var "b"), neq (var "a") (var "b")], False),
-   (eqF $ [eq (var "a") (var "b"), eq (var "c") (var "b"), neq (var "a") (var "c")], False)]
+   (eqF $ [eq (var "a") (var "b"), eq (var "c") (var "b"), neq (var "a") (var "c")], False),
+   (eqF $ [eq (var "a") (var "b"), neq (var "c") (var "d"), eq (var "c") (var "b")], True),
+   (eqF $ [eq (var "a") (var "b"), eq (var "c") (var "d"), eq (var "e") (var "f"),
+           neq (var "e") (var "b"), eq (var "c") (var "a"), neq (var "d") (var "b")], False)]
