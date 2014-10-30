@@ -47,7 +47,14 @@ type Name = String
 data EqTerm
   = Function Name Arity [EqTerm]
   | Variable Name
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord)
+
+instance Show EqTerm where
+  show = showEqTerm
+
+showEqTerm :: EqTerm -> String
+showEqTerm (Function name arity args) = name ++ "(" ++ (L.concat $ L.intersperse "," $ L.map show args) ++ ")"
+showEqTerm (Variable name) = name
 
 var = Variable
 fun = Function
@@ -77,7 +84,9 @@ termsContaining :: EqTerm -> DecideEq [EqTerm]
 termsContaining t = do
   pt <- getRep t
   sts <- gets superTerms
-  return $ fromJust $ M.lookup pt sts
+  case M.lookup pt sts of
+    Just ts -> return ts
+    Nothing -> error $ "Term " ++ show t ++ " not in superTerms"
 
 addNeq :: EqTerm -> EqTerm -> DecideEq Bool
 addNeq l r = do
@@ -144,7 +153,12 @@ congruent (Function n1 a1 args1) (Function n2 a2 args2) = do
 
 equivalentArgs :: [EqTerm] -> [EqTerm] -> DecideEq Bool
 equivalentArgs [] [] = return $ True
---equivalentArgs 
+equivalentArgs (l:ls) (r:rs) = do
+  ln <- getNode l
+  rn <- getNode r
+  case ln == rn of
+    True -> equivalentArgs ls rs
+    False -> return False
 
 classConflict :: [(EqTerm, EqTerm)] -> DecideEq Bool
 classConflict [] = return False
@@ -188,7 +202,7 @@ addTerm t = do
     Nothing -> do
       pts <- gets pointMap
       pt <- new t
-      modify $ \eqSt -> eqSt { pointMap = M.insert t pt pts}
+      modify $ \eqSt -> eqSt { pointMap = M.insert t pt pts }
 
 addTerms :: [EqTerm] -> DecideEq ()
 addTerms [] = return ()
@@ -204,6 +218,7 @@ buildContainsMap (l:ls) r = do
   oldSup <- gets superTerms
   n <- getNode l
   modify $ \eqSt -> eqSt { superTerms = M.insert n tc oldSup }
+  buildContainsMap ls r
 
 allTermsContaining :: EqTerm -> [EqTerm] -> DecideEq [EqTerm]
 allTermsContaining l [] = return []
