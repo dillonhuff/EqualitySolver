@@ -36,6 +36,9 @@ data EqLiteral
 eq = EqLiteral Eq
 neq = EqLiteral Neq
 
+isEq (EqLiteral Eq _ _) = True
+isEq _ = False
+
 data Predicate
   = Eq
   | Neq
@@ -71,11 +74,15 @@ decideEq :: EqFormula -> DecideEq Bool
 decideEq f@(EqFormula lits) = do
   addTerms $ allTerms f
   buildContainsMap (allTerms f) (allTerms f)
-  processEqualities $ S.toList lits
+  processEqualities $ eqs
+  processDisequalities $ diseqs
+  where
+    litList = S.toList lits
+    eqs = L.filter isEq litList
+    diseqs = L.filter  (not . isEq) litList
 
 data EqState
   = EqState {
-    diseqs :: Set (EqTerm, EqTerm),
     pointMap :: Map EqTerm Node,
     superTerms :: Map Node [EqTerm]
     }
@@ -87,15 +94,6 @@ termsContaining t = do
   case M.lookup pt sts of
     Just ts -> return ts
     Nothing -> error $ "Term " ++ show t ++ " not in superTerms"
-
-addNeq :: EqTerm -> EqTerm -> DecideEq Bool
-addNeq l r = do
-  eqAlready <- sameClass l r
-  deqs <- gets diseqs
-  modify $ \s -> s { diseqs = S.insert (l, r) deqs }
-  case eqAlready of
-    True -> return False
-    False -> return True
 
 getRep :: EqTerm -> DecideEq Node
 getRep t = do
@@ -111,23 +109,6 @@ sameClass l r = do
 
 defaultMerge :: EqTerm -> EqTerm -> (EqTerm, [a])
 defaultMerge l r = (l, [])
-mergeClasses :: EqTerm -> EqTerm -> DecideEq (Bool, [EqLiteral])
-mergeClasses l r = do
-  repL <- getNode l
-  repR <- getNode r
-  termsWithL <- termsContaining l
-  termsWithR <- termsContaining r
-  res <- U.merge defaultMerge repL repR
-  case res of
-    Nothing -> return (True, [])
-    _ -> do
-      deqs <- gets diseqs
-      conflict <- classConflict $ S.toList deqs
-      case conflict of
-        True -> return (False, [])
-        False -> do
-          newCong <- findCongruences termsWithL termsWithR
-          return (True, newCong)
 
 findCongruences :: [EqTerm] -> [EqTerm] -> DecideEq [EqLiteral]
 findCongruences [] rs = return []
@@ -154,9 +135,8 @@ congruent (Function n1 a1 args1) (Function n2 a2 args2) = do
 equivalentArgs :: [EqTerm] -> [EqTerm] -> DecideEq Bool
 equivalentArgs [] [] = return $ True
 equivalentArgs (l:ls) (r:rs) = do
-  ln <- getNode l
-  rn <- getNode r
-  case ln == rn of
+  same <- sameClass l r
+  case same of
     True -> equivalentArgs ls rs
     False -> return False
 
@@ -169,20 +149,26 @@ classConflict (nextDis:rest) = do
     _ -> do
       classConflict rest
 
-addEq :: EqTerm -> EqTerm -> DecideEq (Bool, [EqLiteral])
+addEq :: EqTerm -> EqTerm -> DecideEq [EqLiteral]
 addEq l r = do
-  eqAlready <- sameClass l r
-  case eqAlready of
-    True -> return (True, [])
-    False -> mergeClasses l r
+  repL <- getNode l
+  repR <- getNode r
+  termsWithL <- termsContaining l
+  termsWithR <- termsContaining r
+  res <- U.merge defaultMerge repL repR
+  case res of
+    Nothing -> return []
+    _ -> do
+      newCong <- findCongruences termsWithL termsWithR
+      return newCong
 
 instance Show EqState where
   show = showEqState
 
 showEqState :: EqState -> String
-showEqState (EqState dqs pMap _) = L.concat $ L.map (show . fst) $ M.toList pMap
+showEqState (EqState pMap _) = L.concat $ L.map (show . fst) $ M.toList pMap
 
-newEqState = EqState S.empty M.empty M.empty
+newEqState = EqState M.empty M.empty
 
 nodeForTerm :: EqTerm -> DecideEq (Maybe Node)
 nodeForTerm t = do
@@ -229,17 +215,16 @@ allTermsContaining l (r:rs) = do
       return $ r:tc
     False -> allTermsContaining l rs
 
-processEqualities :: [EqLiteral] -> DecideEq Bool
-processEqualities [] = return True
+processEqualities :: [EqLiteral] -> DecideEq ()
+processEqualities [] = return ()
 processEqualities ((EqLiteral Eq l r):ts) = do
-  (sat, newEqs) <- addEq l r
-  case sat of
-    True -> do
-      processEqualities (newEqs ++ ts)
-    False -> return False
-processEqualities ((EqLiteral Neq l r):ts) = do
-  sat <- addNeq l r
-  case sat of
-    True -> do
-      processEqualities ts
-    False -> return False
+  newEqs <- addEq l r
+  processEqualities (newEqs ++ ts)
+  
+processDisequalities :: [EqLiteral] -> DecideEq Bool
+processDisequalities [] = return True
+processDisequalities ((EqLiteral Neq l r):ts) = do
+  same <- sameClass l r
+  case same of
+    True -> return False
+    False -> processDisequalities ts
