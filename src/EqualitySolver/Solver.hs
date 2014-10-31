@@ -18,15 +18,15 @@ data EqFormula = EqFormula (Set EqLiteral)
 eqF = EqFormula . S.fromList
 
 allTerms :: EqFormula -> [EqTerm]
-allTerms (EqFormula lits) = L.concat $ L.map extractTerms $ S.toList lits
+allTerms (EqFormula lits) = L.concatMap extractTerms $ S.toList lits
 
 extractTerms (EqLiteral _ l r) = [l, r]
 
 contains :: EqTerm -> EqTerm -> Bool
 contains t (Function _ _ args) = tIsArg || tInArg
   where
-    tIsArg = L.or $ L.map (==t) args
-    tInArg = L.or $ L.map (contains t) args
+    tIsArg = t `L.elem` args
+    tInArg = L.any (contains t) args
 contains _ _ = False
 
 data EqLiteral
@@ -56,7 +56,7 @@ instance Show EqTerm where
   show = showEqTerm
 
 showEqTerm :: EqTerm -> String
-showEqTerm (Function name arity args) = name ++ "(" ++ (L.concat $ L.intersperse "," $ L.map show args) ++ ")"
+showEqTerm (Function name arity args) = name ++ "(" ++ intercalate "," (L.map show args) ++ ")"
 showEqTerm (Variable name) = name
 
 var = Variable
@@ -74,8 +74,8 @@ decideEq :: EqFormula -> DecideEq Bool
 decideEq f@(EqFormula lits) = do
   addTerms $ allTerms f
   buildContainsMap (allTerms f) (allTerms f)
-  processEqualities $ eqs
-  processDisequalities $ diseqs
+  processEqualities eqs
+  processDisequalities diseqs
   where
     litList = S.toList lits
     eqs = L.filter isEq litList
@@ -122,18 +122,18 @@ congruentWith l [] = return []
 congruentWith l (r:rs) = do
   areCong <- congruent l r
   rest <- congruentWith l rs
-  case areCong of
-    True -> return $ (EqLiteral Eq l r):rest
-    False -> return rest
+  return $ case areCong of
+    True -> EqLiteral Eq l r : rest
+    False -> rest
 
 congruent :: EqTerm -> EqTerm -> DecideEq Bool
-congruent (Function n1 a1 args1) (Function n2 a2 args2) = do
+congruent (Function n1 a1 args1) (Function n2 a2 args2) =
   case n1 /= n2 || a1 /= a2 of
     True -> return False
     False -> equivalentArgs args1 args2
 
 equivalentArgs :: [EqTerm] -> [EqTerm] -> DecideEq Bool
-equivalentArgs [] [] = return $ True
+equivalentArgs [] [] = return True
 equivalentArgs (l:ls) (r:rs) = do
   same <- sameClass l r
   case same of
@@ -143,11 +143,10 @@ equivalentArgs (l:ls) (r:rs) = do
 classConflict :: [(EqTerm, EqTerm)] -> DecideEq Bool
 classConflict [] = return False
 classConflict (nextDis:rest) = do
-  s <- sameClass (fst nextDis) (snd nextDis)
+  s <- uncurry sameClass nextDis
   case s of
     True -> return False
-    _ -> do
-      classConflict rest
+    _ -> classConflict rest
 
 addEq :: EqTerm -> EqTerm -> DecideEq [EqLiteral]
 addEq l r = do
@@ -158,15 +157,13 @@ addEq l r = do
   res <- U.merge defaultMerge repL repR
   case res of
     Nothing -> return []
-    _ -> do
-      newCong <- findCongruences termsWithL termsWithR
-      return newCong
+    _ -> findCongruences termsWithL termsWithR
 
 instance Show EqState where
   show = showEqState
 
 showEqState :: EqState -> String
-showEqState (EqState pMap _) = L.concat $ L.map (show . fst) $ M.toList pMap
+showEqState (EqState pMap _) = L.concatMap (show . fst) $ M.toList pMap
 
 newEqState = EqState M.empty M.empty
 
@@ -208,7 +205,7 @@ buildContainsMap (l:ls) r = do
 
 allTermsContaining :: EqTerm -> [EqTerm] -> DecideEq [EqTerm]
 allTermsContaining l [] = return []
-allTermsContaining l (r:rs) = do
+allTermsContaining l (r:rs) =
   case contains l r of
     True -> do
       tc <- allTermsContaining l rs
@@ -217,13 +214,13 @@ allTermsContaining l (r:rs) = do
 
 processEqualities :: [EqLiteral] -> DecideEq ()
 processEqualities [] = return ()
-processEqualities ((EqLiteral Eq l r):ts) = do
+processEqualities (EqLiteral Eq l r:ts) = do
   newEqs <- addEq l r
   processEqualities (newEqs ++ ts)
   
 processDisequalities :: [EqLiteral] -> DecideEq Bool
 processDisequalities [] = return True
-processDisequalities ((EqLiteral Neq l r):ts) = do
+processDisequalities (EqLiteral Neq l r : ts) = do
   same <- sameClass l r
   case same of
     True -> return False
