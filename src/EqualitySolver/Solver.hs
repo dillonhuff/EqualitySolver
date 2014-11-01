@@ -20,7 +20,7 @@ eqF = EqFormula . S.fromList
 allTerms :: EqFormula -> [EqTerm]
 allTerms (EqFormula lits) = L.concatMap extractTerms $ S.toList lits
 
-extractTerms (EqLiteral _ l r) = [l, r]
+extractTerms (EqLiteral _ l r) = [l, r] ++ subTerms l ++ subTerms r
 
 contains :: EqTerm -> EqTerm -> Bool
 contains t (Function _ _ args) = tIsArg || tInArg
@@ -61,6 +61,10 @@ showEqTerm (Variable name) = name
 
 var = Variable
 fun = Function
+
+subTerms :: EqTerm -> [EqTerm]
+subTerms (Variable _) = []
+subTerms (Function _ _ args) = args ++ L.concatMap subTerms args
 
 satisfiableInEq :: EqFormula -> Bool
 satisfiableInEq formula = fst $ runDecideEq $ decideEq formula
@@ -150,14 +154,19 @@ classConflict (nextDis:rest) = do
 
 addEq :: EqTerm -> EqTerm -> DecideEq [EqLiteral]
 addEq l r = do
-  repL <- getNode l
-  repR <- getNode r
+  repL <- getRep l
+  repR <- getRep r
   termsWithL <- termsContaining l
   termsWithR <- termsContaining r
   res <- U.merge defaultMerge repL repR
   case res of
     Nothing -> return []
-    _ -> findCongruences termsWithL termsWithR
+    _ -> do
+      newCong <- findCongruences termsWithL termsWithR
+      oldSt <- gets superTerms
+      rep <- getRep l
+      modify $ \s -> s { superTerms = M.insert rep (termsWithL ++ termsWithR) oldSt }
+      return newCong
 
 instance Show EqState where
   show = showEqState
